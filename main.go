@@ -24,7 +24,7 @@ import (
 
 // TODO: Make this more clear
 var help = `Usage of gnmi:
-gnmi -addr [<VRF-NAME>/]ADDRESS:PORT -forwardurl [<VRF-NAME>/]ADDRESS:PORT [options...] PATH+
+gnmi -addr [<VRF-NAME>/]ADDRESS:PORT -forwardurl URL:PORT [options...] PATH+
 `
 
 func usageAndExit(s string) {
