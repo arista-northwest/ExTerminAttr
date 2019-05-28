@@ -3,5 +3,5 @@
 ### Example
 
 ```
-go run main.go -addr localhost:6042 -forward_url http://remote:8080 /Sysdb
+sudo ./exterminattr -addr management/localhost:6042 -ns_name management -forward_url http://192.168.56.1:8080 /Sysdb/cell/1
 ```
