@@ -12,6 +12,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"path"
@@ -19,6 +20,7 @@ import (
 
 	"github.com/aristanetworks/glog"
 	"github.com/aristanetworks/goarista/gnmi"
+	"github.com/aristanetworks/goarista/netns"
 	pb "github.com/openconfig/gnmi/proto/gnmi"
 )
 
@@ -55,6 +57,7 @@ func main() {
 		"only applies for sample subscriptions (400ms, 2.5s, 1m, etc.)")
 	heartbeatIntervalStr := flag.String("heartbeat_interval", "0", "Subscribe heartbeat "+
 		"interval, only applies for on-change subscriptions (400ms, 2.5s, 1m, etc.)")
+	ns_name := flag.String("ns_name", "default", "")
 
 	var sampleInterval, heartbeatInterval time.Duration
 	var err error
@@ -86,6 +89,8 @@ func main() {
 		glog.Fatal(err)
 	}
 
+	fmt.Println("Dialed in...")
+
 	respChan := make(chan *pb.SubscribeResponse)
 	errChan := make(chan error)
 	defer close(errChan)
@@ -97,7 +102,7 @@ func main() {
 			if !open {
 				return
 			}
-			if err := ForwardSubscribeResponse(resp, forward_url); err != nil {
+			if err := ForwardSubscribeResponse(resp, *forward_url, *ns_name); err != nil {
 				glog.Fatal(err)
 			}
 		case err := <-errChan:
@@ -106,7 +111,7 @@ func main() {
 	}
 }
 
-func ForwardSubscribeResponse(response *pb.SubscribeResponse, forward_url *string) error {
+func ForwardSubscribeResponse(response *pb.SubscribeResponse, forward_url string, ns_name string) error {
 	type Update struct {
 		Timestamp string      `json:"timestamp"`
 		Operation string      `json:"operation"`
@@ -147,12 +152,40 @@ func ForwardSubscribeResponse(response *pb.SubscribeResponse, forward_url *strin
 			glog.Fatal(err)
 		}
 
-		// TODO: Forward here...
-		_, err = http.Post(*forward_url, "application/json", bytes.NewBuffer(data))
+		forward(forward_url, ns_name, data)
+
 		if err != nil {
 			log.Fatal(err)
 		}
 	}
 
 	return nil
+}
+
+func forward(url string, vrf string, data []byte) error {
+	vrf = netns.VRFToNetNS(vrf)
+
+	dial := func(network, address string) (net.Conn, error) {
+		var conn net.Conn
+		err := netns.Do(vrf, func() error {
+			var err error
+			conn, err = (&net.Dialer{
+				Timeout:   30 * time.Second, // This is the connection timeout
+				KeepAlive: 30 * time.Second,
+			}).Dial(network, address)
+			return err
+		})
+		return conn, err
+	}
+
+	client := &http.Client{
+		Transport: &http.Transport{
+			//TLSClientConfig: ..., <- if you need SSL/TLS.
+			Dial: dial,
+		},
+		Timeout: 30 * time.Second, // This is the request timeout
+	}
+
+	_, err := client.Post(url, "application/json", bytes.NewBuffer(data))
+	return err
 }
