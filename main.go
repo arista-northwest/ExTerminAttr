@@ -89,8 +89,6 @@ func main() {
 		glog.Fatal(err)
 	}
 
-	fmt.Println("Dialed in...")
-
 	respChan := make(chan *pb.SubscribeResponse)
 	errChan := make(chan error)
 	defer close(errChan)
