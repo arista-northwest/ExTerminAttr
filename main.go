@@ -24,9 +24,8 @@ import (
 	pb "github.com/openconfig/gnmi/proto/gnmi"
 )
 
-// TODO: Make this more clear
-var help = `Usage of gnmi:
-gnmi -addr [<VRF-NAME>/]ADDRESS:PORT -forwardurl URL:PORT [options...] PATH+
+var help = `Usage of exterminattr:
+exterminattr -addr [<VRF-NAME>/]ADDRESS:PORT -forward_url URL:PORT [options...] PATH+
 `
 
 func usageAndExit(s string) {
@@ -42,8 +41,9 @@ func main() {
 	subscribeOptions := &gnmi.SubscribeOptions{}
 
 	flag.StringVar(&cfg.Addr, "addr", "localhost:6042", "Address of gNMI gRPC server with optional VRF name")
-	forward_url := flag.String("forward_url", "http://localhost:8080", "")
-
+	forwardURL := flag.String("forward_url", "http://localhost:8080", "")
+	flag.StringVar(&cfg.Password, "password", "", "Password to authenticate with")
+	flag.StringVar(&cfg.Username, "username", "", "Username to authenticate with")
 	flag.StringVar(&subscribeOptions.Origin, "origin", "", "")
 	flag.StringVar(&subscribeOptions.Prefix, "prefix", "", "Subscribe prefix path")
 	flag.BoolVar(&subscribeOptions.UpdatesOnly, "updates_only", false,
@@ -57,7 +57,7 @@ func main() {
 		"only applies for sample subscriptions (400ms, 2.5s, 1m, etc.)")
 	heartbeatIntervalStr := flag.String("heartbeat_interval", "0", "Subscribe heartbeat "+
 		"interval, only applies for on-change subscriptions (400ms, 2.5s, 1m, etc.)")
-	ns_name := flag.String("ns_name", "default", "")
+	nsName := flag.String("ns_name", "default", "")
 
 	var sampleInterval, heartbeatInterval time.Duration
 	var err error
@@ -80,7 +80,6 @@ func main() {
 	if cfg.Addr == "" {
 		usageAndExit("error: address not specified")
 	}
-
 	args := flag.Args()
 
 	ctx := gnmi.NewContext(context.Background(), cfg)
@@ -100,7 +99,7 @@ func main() {
 			if !open {
 				return
 			}
-			if err := ForwardSubscribeResponse(resp, *forward_url, *ns_name); err != nil {
+			if err := forwardSubscribeResponse(resp, *forwardURL, *nsName); err != nil {
 				glog.Fatal(err)
 			}
 		case err := <-errChan:
@@ -109,7 +108,7 @@ func main() {
 	}
 }
 
-func ForwardSubscribeResponse(response *pb.SubscribeResponse, forward_url string, ns_name string) error {
+func forwardSubscribeResponse(response *pb.SubscribeResponse, forwardURL string, nsName string) error {
 	type Update struct {
 		Timestamp string      `json:"timestamp"`
 		Operation string      `json:"operation"`
@@ -150,8 +149,7 @@ func ForwardSubscribeResponse(response *pb.SubscribeResponse, forward_url string
 			glog.Fatal(err)
 		}
 
-		forward(forward_url, ns_name, data)
-
+		err = forward(forwardURL, nsName, data)
 		if err != nil {
 			log.Fatal(err)
 		}
