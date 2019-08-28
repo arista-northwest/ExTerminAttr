@@ -20,12 +20,12 @@ import (
 
 	"github.com/aristanetworks/glog"
 	"github.com/aristanetworks/goarista/gnmi"
-	"github.com/aristanetworks/goarista/netns"
 	pb "github.com/openconfig/gnmi/proto/gnmi"
 )
 
 var help = `Usage of exterminattr:
-exterminattr -addr [<VRF-NAME>/]ADDRESS:PORT -forward_url URL:PORT [options...] PATH+
+exterminattr -addr ADDRESS:PORT -forward_url URL:PORT [options...] PATH+
+sudo /sbin/ip netns exec ns-management exterminattr ...
 `
 
 func usageAndExit(s string) {
@@ -57,7 +57,7 @@ func main() {
 		"only applies for sample subscriptions (400ms, 2.5s, 1m, etc.)")
 	heartbeatIntervalStr := flag.String("heartbeat_interval", "0", "Subscribe heartbeat "+
 		"interval, only applies for on-change subscriptions (400ms, 2.5s, 1m, etc.)")
-	nsName := flag.String("ns_name", "default", "")
+	//nsName := flag.String("ns_name", "default", "")
 
 	var sampleInterval, heartbeatInterval time.Duration
 	var err error
@@ -99,7 +99,7 @@ func main() {
 			if !open {
 				return
 			}
-			if err := forwardSubscribeResponse(resp, *forwardURL, *nsName); err != nil {
+			if err := forwardSubscribeResponse(resp, *forwardURL); err != nil {
 				glog.Fatal(err)
 			}
 		case err := <-errChan:
@@ -108,7 +108,7 @@ func main() {
 	}
 }
 
-func forwardSubscribeResponse(response *pb.SubscribeResponse, forwardURL string, nsName string) error {
+func forwardSubscribeResponse(response *pb.SubscribeResponse, forwardURL string) error {
 	type Update struct {
 		Timestamp string      `json:"timestamp"`
 		Operation string      `json:"operation"`
@@ -149,7 +149,7 @@ func forwardSubscribeResponse(response *pb.SubscribeResponse, forwardURL string,
 			glog.Fatal(err)
 		}
 
-		err = forward(forwardURL, nsName, data)
+		err = forward(forwardURL, data)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -158,19 +158,13 @@ func forwardSubscribeResponse(response *pb.SubscribeResponse, forwardURL string,
 	return nil
 }
 
-func forward(url string, vrf string, data []byte) error {
-	vrf = netns.VRFToNetNS(vrf)
+func forward(url string, data []byte) error {
 
 	dial := func(network, address string) (net.Conn, error) {
-		var conn net.Conn
-		err := netns.Do(vrf, func() error {
-			var err error
-			conn, err = (&net.Dialer{
-				Timeout:   30 * time.Second, // This is the connection timeout
-				KeepAlive: 30 * time.Second,
-			}).Dial(network, address)
-			return err
-		})
+		conn, err := (&net.Dialer{
+			Timeout:   30 * time.Second, // This is the connection timeout
+			KeepAlive: 30 * time.Second,
+		}).Dial(network, address)
 		return conn, err
 	}
 
