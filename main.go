@@ -11,11 +11,13 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"net"
 	"net/http"
 	"os"
 	"path"
+	"strings"
 	"time"
 
 	"github.com/aristanetworks/glog"
@@ -38,10 +40,12 @@ func usageAndExit(s string) {
 
 func main() {
 	cfg := &gnmi.Config{}
+
 	subscribeOptions := &gnmi.SubscribeOptions{}
 
 	flag.StringVar(&cfg.Addr, "addr", "localhost:6042", "Address of gNMI gRPC server with optional VRF name")
 	forwardURL := flag.String("forward_url", "http://localhost:8080", "")
+	pathsFile := flag.String("paths_file", "", "path to file")
 	flag.StringVar(&cfg.Password, "password", "", "Password to authenticate with")
 	flag.StringVar(&cfg.Username, "username", "", "Username to authenticate with")
 	flag.StringVar(&subscribeOptions.Origin, "origin", "", "")
@@ -59,8 +63,10 @@ func main() {
 		"interval, only applies for on-change subscriptions (400ms, 2.5s, 1m, etc.)")
 	//nsName := flag.String("ns_name", "default", "")
 
+	var paths []string
 	var sampleInterval, heartbeatInterval time.Duration
 	var err error
+
 	if sampleInterval, err = time.ParseDuration(*sampleIntervalStr); err != nil {
 		usageAndExit(fmt.Sprintf("error: sample interval (%s) invalid", *sampleIntervalStr))
 	}
@@ -91,8 +97,20 @@ func main() {
 	respChan := make(chan *pb.SubscribeResponse)
 	errChan := make(chan error)
 	defer close(errChan)
-	subscribeOptions.Paths = gnmi.SplitPaths(args[:])
+
+	if *pathsFile != "" {
+		paths, err = loadPaths(*pathsFile)
+		if err != nil {
+			glog.Fatal(err)
+		}
+	} else {
+		paths = args[:]
+	}
+
+	subscribeOptions.Paths = gnmi.SplitPaths(paths)
+
 	go gnmi.Subscribe(ctx, client, subscribeOptions, respChan, errChan)
+
 	for {
 		select {
 		case resp, open := <-respChan:
@@ -106,6 +124,18 @@ func main() {
 			glog.Fatal(err)
 		}
 	}
+}
+
+func loadPaths(pathsFile string) ([]string, error) {
+	file, err := os.Open(pathsFile)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
+	b, err := ioutil.ReadAll(file)
+	trimmed := strings.TrimSpace(string(b))
+	return strings.Split(trimmed, "\n"), nil
 }
 
 func forwardSubscribeResponse(response *pb.SubscribeResponse, forwardURL string) error {
@@ -159,7 +189,6 @@ func forwardSubscribeResponse(response *pb.SubscribeResponse, forwardURL string)
 }
 
 func forward(url string, data []byte) error {
-
 	dial := func(network, address string) (net.Conn, error) {
 		conn, err := (&net.Dialer{
 			Timeout:   30 * time.Second, // This is the connection timeout
