@@ -146,6 +146,10 @@ func forwardSubscribeResponse(response *pb.SubscribeResponse, forwardURL string)
 		Value     interface{} `json:"value"`
 	}
 
+	// if err := gnmi.LogSubscribeResponse(response); err != nil {
+	// 	glog.Fatal(err)
+	// }
+
 	switch resp := response.Response.(type) {
 
 	case *pb.SubscribeResponse_Error:
@@ -157,24 +161,29 @@ func forwardSubscribeResponse(response *pb.SubscribeResponse, forwardURL string)
 		}
 
 	case *pb.SubscribeResponse_Update:
-		t := time.Unix(0, resp.Update.Timestamp).UTC()
-		message := Update{
-			Timestamp: t.Format(time.RFC3339Nano),
-		}
+		timetstamp := time.Unix(0, resp.Update.Timestamp).UTC()
 		prefix := gnmi.StrPath(resp.Update.Prefix)
+
+		var updates []Update
 		for _, update := range resp.Update.Update {
-			message.Operation = "UPDATE"
-			message.Path = path.Join(prefix, gnmi.StrPath(update.Path))
-			message.Value = gnmi.StrUpdateVal(update)
+			updates = append(updates, Update{
+				Timestamp: timetstamp.Format(time.RFC3339Nano),
+				Operation: "UPDATE",
+				Path:      path.Join(prefix, gnmi.StrPath(update.Path)),
+				Value:     gnmi.StrUpdateVal(update),
+			})
 		}
 
 		for _, del := range resp.Update.Delete {
-			message.Operation = "DELETE"
-			message.Path = path.Join(prefix, gnmi.StrPath(del))
-			message.Value = nil
+			updates = append(updates, Update{
+				Timestamp: timetstamp.Format(time.RFC3339Nano),
+				Operation: "DELETE",
+				Path:      path.Join(prefix, gnmi.StrPath(del)),
+				Value:     nil,
+			})
 		}
 
-		data, err := json.Marshal(message)
+		data, err := json.Marshal(updates)
 		if err != nil {
 			glog.Fatal(err)
 		}
