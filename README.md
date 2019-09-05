@@ -8,7 +8,7 @@ For EOS make sure to set the GOOS and GOARCH environment variables...
 GOOS=linux GOARCH=386 go build .
 ```
 
-### Example
+### Examples
 
 
 #### On switch...
