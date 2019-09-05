@@ -135,7 +135,7 @@ func loadPaths(pathsFile string) ([]string, error) {
 
 	b, err := ioutil.ReadAll(file)
 	trimmed := strings.TrimSpace(string(b))
-	return strings.Split(trimmed, "\n"), nil
+	return strings.Split(trimmed, " "), nil
 }
 
 func forwardSubscribeResponse(response *pb.SubscribeResponse, forwardURL string) error {
