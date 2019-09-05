@@ -14,7 +14,22 @@ GOOS=linux GOARCH=386 go build .
 #### On switch...
 
 ```
-sudo ./ExTerminAttr -addr localhost:6042 -forward_url http://192.168.56.1:8080 /Smash
+bash /mnt/flash/ExTerminAttr -forward_url http://192.168.56.1:8080 /Smash
+```
+
+#### In a VRF
+
+```
+bash sudo ip netns exec ns-management /mnt/flash/ExTerminAttr -forward_url http://192.168.56.1:8080 /Smash
+```
+
+#### As a daemon
+
+```
+
+
+```
+sudo ./ExTerminAttr -forward_url http://192.168.56.1:8080 /Smash
 ```
 
 #### Off switch...
