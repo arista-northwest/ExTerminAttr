@@ -17,6 +17,7 @@ import (
 	"net/http"
 	"os"
 	"path"
+	"regexp"
 	"strings"
 	"time"
 
@@ -103,6 +104,7 @@ func main() {
 		if err != nil {
 			glog.Fatal(err)
 		}
+		glog.Info("Loaded paths: ", paths)
 	} else {
 		paths = args[:]
 	}
@@ -133,9 +135,10 @@ func loadPaths(pathsFile string) ([]string, error) {
 	}
 	defer file.Close()
 
-	b, err := ioutil.ReadAll(file)
-	trimmed := strings.TrimSpace(string(b))
-	return strings.Split(trimmed, " "), nil
+	data, err := ioutil.ReadAll(file)
+	trimmed := strings.TrimSpace(string(data))
+	s := regexp.MustCompile("[[:space:]]+").Split(trimmed, -1)
+	return s, nil
 }
 
 func forwardSubscribeResponse(response *pb.SubscribeResponse, forwardURL string) error {
