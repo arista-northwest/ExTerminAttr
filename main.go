@@ -26,9 +26,9 @@ import (
 	pb "github.com/openconfig/gnmi/proto/gnmi"
 )
 
-var help = `Usage of exterminattr:
-exterminattr -addr ADDRESS:PORT -forward_url URL:PORT [options...] PATH+
-sudo /sbin/ip netns exec ns-management exterminattr ...
+var help = `Usage of ExTerminAttr:
+ExTerminAttr -forward_url URL:PORT [options...] PATH+
+sudo /sbin/ip netns exec ns-management ExTerminAttr -forward_url URL:PORT [options...] PATH+
 `
 
 func usageAndExit(s string) {
@@ -89,16 +89,6 @@ func main() {
 	}
 	args := flag.Args()
 
-	ctx := gnmi.NewContext(context.Background(), cfg)
-	client, err := gnmi.Dial(cfg)
-	if err != nil {
-		glog.Fatal(err)
-	}
-
-	respChan := make(chan *pb.SubscribeResponse)
-	errChan := make(chan error)
-	defer close(errChan)
-
 	if *pathsFile != "" {
 		paths, err = loadPaths(*pathsFile)
 		if err != nil {
@@ -110,6 +100,16 @@ func main() {
 	}
 
 	subscribeOptions.Paths = gnmi.SplitPaths(paths)
+
+	ctx := gnmi.NewContext(context.Background(), cfg)
+	client, err := gnmi.Dial(cfg)
+	if err != nil {
+		glog.Fatal(err)
+	}
+
+	respChan := make(chan *pb.SubscribeResponse)
+	errChan := make(chan error)
+	defer close(errChan)
 
 	go gnmi.Subscribe(ctx, client, subscribeOptions, respChan, errChan)
 
@@ -149,10 +149,6 @@ func forwardSubscribeResponse(response *pb.SubscribeResponse, forwardURL string)
 		Value     interface{} `json:"value"`
 	}
 
-	// if err := gnmi.LogSubscribeResponse(response); err != nil {
-	// 	glog.Fatal(err)
-	// }
-
 	switch resp := response.Response.(type) {
 
 	case *pb.SubscribeResponse_Error:
@@ -169,11 +165,15 @@ func forwardSubscribeResponse(response *pb.SubscribeResponse, forwardURL string)
 
 		var updates []Update
 		for _, update := range resp.Update.Update {
+			value, err := gnmi.ExtractValue(update)
+			if err != nil {
+				glog.Fatal(err)
+			}
 			updates = append(updates, Update{
 				Timestamp: timetstamp.Format(time.RFC3339Nano),
 				Operation: "UPDATE",
 				Path:      path.Join(prefix, gnmi.StrPath(update.Path)),
-				Value:     gnmi.StrUpdateVal(update),
+				Value:     value,
 			})
 		}
 
