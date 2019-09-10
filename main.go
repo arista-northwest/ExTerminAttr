@@ -7,6 +7,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -211,8 +212,9 @@ func forward(url string, data []byte) error {
 
 	client := &http.Client{
 		Transport: &http.Transport{
-			//TLSClientConfig: ..., <- if you need SSL/TLS.
-			Dial: dial,
+			// Don't try to validate certificates
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+			Dial:            dial,
 		},
 		Timeout: 30 * time.Second, // This is the request timeout
 	}
