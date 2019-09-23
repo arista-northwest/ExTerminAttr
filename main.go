@@ -24,6 +24,7 @@ import (
 
 	"github.com/aristanetworks/glog"
 	"github.com/aristanetworks/goarista/gnmi"
+	"github.com/jpillora/backoff"
 	pb "github.com/openconfig/gnmi/proto/gnmi"
 )
 
@@ -38,6 +39,35 @@ func usageAndExit(s string) {
 		fmt.Fprintln(os.Stderr, s)
 	}
 	os.Exit(1)
+}
+
+func subscribeAndForward(cfg *gnmi.Config, subscribeOptions *gnmi.SubscribeOptions, forwardURL string) error {
+
+	ctx := gnmi.NewContext(context.Background(), cfg)
+	client, err := gnmi.Dial(cfg)
+	if err != nil {
+		glog.Fatal(err)
+	}
+
+	respChan := make(chan *pb.SubscribeResponse)
+	errChan := make(chan error)
+	defer close(errChan)
+
+	go gnmi.Subscribe(ctx, client, subscribeOptions, respChan, errChan)
+
+	for {
+		select {
+		case resp, open := <-respChan:
+			if !open {
+				return err
+			}
+			if err := forwardSubscribeResponse(resp, forwardURL); err != nil {
+				return err
+			}
+		case err := <-errChan:
+			return err
+		}
+	}
 }
 
 func main() {
@@ -63,7 +93,6 @@ func main() {
 		"only applies for sample subscriptions (400ms, 2.5s, 1m, etc.)")
 	heartbeatIntervalStr := flag.String("heartbeat_interval", "0", "Subscribe heartbeat "+
 		"interval, only applies for on-change subscriptions (400ms, 2.5s, 1m, etc.)")
-	//nsName := flag.String("ns_name", "default", "")
 
 	var paths []string
 	var sampleInterval, heartbeatInterval time.Duration
@@ -101,32 +130,24 @@ func main() {
 	}
 
 	subscribeOptions.Paths = gnmi.SplitPaths(paths)
-
-	ctx := gnmi.NewContext(context.Background(), cfg)
-	client, err := gnmi.Dial(cfg)
-	if err != nil {
-		glog.Fatal(err)
+	b := &backoff.Backoff{
+		//These are the defaults
+		Min:    100 * time.Millisecond,
+		Max:    10 * time.Second,
+		Factor: 2,
+		Jitter: false,
 	}
-
-	respChan := make(chan *pb.SubscribeResponse)
-	errChan := make(chan error)
-	defer close(errChan)
-
-	go gnmi.Subscribe(ctx, client, subscribeOptions, respChan, errChan)
 
 	for {
-		select {
-		case resp, open := <-respChan:
-			if !open {
-				return
-			}
-			if err := forwardSubscribeResponse(resp, *forwardURL); err != nil {
-				glog.Fatal(err)
-			}
-		case err := <-errChan:
-			glog.Fatal(err)
+		err = subscribeAndForward(cfg, subscribeOptions, *forwardURL)
+		if err != nil {
+			d := b.Duration()
+			fmt.Printf("%s, reconnecting in %s\n", err, d)
+			time.Sleep(d)
+			continue
 		}
 	}
+
 }
 
 func loadPaths(pathsFile string) ([]string, error) {
@@ -168,7 +189,8 @@ func forwardSubscribeResponse(response *pb.SubscribeResponse, forwardURL string)
 		for _, update := range resp.Update.Update {
 			value, err := gnmi.ExtractValue(update)
 			if err != nil {
-				glog.Fatal(err)
+				log.Printf("Failed to extract value: %s", err)
+				return nil
 			}
 			updates = append(updates, Update{
 				Timestamp: timetstamp.Format(time.RFC3339Nano),
@@ -189,12 +211,12 @@ func forwardSubscribeResponse(response *pb.SubscribeResponse, forwardURL string)
 
 		data, err := json.Marshal(updates)
 		if err != nil {
-			glog.Fatal(err)
+			return err
 		}
 
 		err = forward(forwardURL, data)
 		if err != nil {
-			log.Fatal(err)
+			return err
 		}
 	}
 
