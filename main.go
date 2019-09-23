@@ -49,8 +49,8 @@ func subscribeAndForward(cfg *gnmi.Config, subscribeOptions *gnmi.SubscribeOptio
 		glog.Fatal(err)
 	}
 
-	respChan := make(chan *pb.SubscribeResponse)
-	errChan := make(chan error)
+	respChan := make(chan *pb.SubscribeResponse, 10)
+	errChan := make(chan error, 10)
 	defer close(errChan)
 
 	go gnmi.Subscribe(ctx, client, subscribeOptions, respChan, errChan)
@@ -60,6 +60,9 @@ func subscribeAndForward(cfg *gnmi.Config, subscribeOptions *gnmi.SubscribeOptio
 		case resp, open := <-respChan:
 			if !open {
 				return err
+			}
+			if err := gnmi.LogSubscribeResponse(resp); err != nil {
+				glog.Fatal(err)
 			}
 			if err := forwardSubscribeResponse(resp, forwardURL); err != nil {
 				return err
@@ -142,7 +145,7 @@ func main() {
 		err = subscribeAndForward(cfg, subscribeOptions, *forwardURL)
 		if err != nil {
 			d := b.Duration()
-			log.Printf("%s, reconnecting in %s\n", err, d)
+			log.Printf("%s, retrying in %s\n", err, d)
 			time.Sleep(d)
 			continue
 		}
@@ -241,6 +244,23 @@ func forward(url string, data []byte) error {
 		Timeout: 30 * time.Second, // This is the request timeout
 	}
 
-	_, err := client.Post(url, "application/json", bytes.NewBuffer(data))
-	return err
+	//req, err := client.Post(url, "application/json", bytes.NewBuffer(data))
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(data))
+
+	defer func() {
+		req.Header.Set("Connection", "close")
+		req.Close = true
+	}()
+
+	resp, err := client.Do(req)
+
+	defer func() {
+		resp.Body.Close()
+	}()
+
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
