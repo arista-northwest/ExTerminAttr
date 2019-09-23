@@ -142,7 +142,7 @@ func main() {
 		err = subscribeAndForward(cfg, subscribeOptions, *forwardURL)
 		if err != nil {
 			d := b.Duration()
-			fmt.Printf("%s, reconnecting in %s\n", err, d)
+			log.Printf("%s, reconnecting in %s\n", err, d)
 			time.Sleep(d)
 			continue
 		}
