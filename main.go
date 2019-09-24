@@ -123,27 +123,6 @@ func main() {
 			continue
 		}
 	}
-
-}
-
-func parseOrigin(s string) (string, bool) {
-	if strings.HasPrefix(s, "origin=") {
-		return strings.TrimPrefix(s, "origin="), true
-	}
-	return "", false
-}
-
-func loadPaths(pathsFile string) ([]string, error) {
-	file, err := os.Open(pathsFile)
-	if err != nil {
-		return nil, err
-	}
-	defer file.Close()
-
-	data, err := ioutil.ReadAll(file)
-	trimmed := strings.TrimSpace(string(data))
-	s := regexp.MustCompile("[[:space:]]+").Split(trimmed, -1)
-	return s, nil
 }
 
 func forwardSubscribeResponse(response *pb.SubscribeResponse, forwardURL string) error {
@@ -245,6 +224,26 @@ func forward(url string, data []byte) error {
 	}
 
 	return nil
+}
+
+func loadPaths(pathsFile string) ([]string, error) {
+	file, err := os.Open(pathsFile)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
+	data, err := ioutil.ReadAll(file)
+	trimmed := strings.TrimSpace(string(data))
+	s := regexp.MustCompile("[[:space:]]+").Split(trimmed, -1)
+	return s, nil
+}
+
+func parseOrigin(s string) (string, bool) {
+	if strings.HasPrefix(s, "origin=") {
+		return strings.TrimPrefix(s, "origin="), true
+	}
+	return "", false
 }
 
 func subscribeAndForward(cfg *gnmi.Config, subscribeOptions *gnmi.SubscribeOptions, forwardURL string) error {
