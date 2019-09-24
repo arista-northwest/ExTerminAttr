@@ -29,8 +29,8 @@ import (
 )
 
 var help = `Usage of ExTerminAttr:
-ExTerminAttr -forward_url URL:PORT [options...] PATH+
-sudo /sbin/ip netns exec ns-management ExTerminAttr -forward_url URL:PORT [options...] PATH+
+ExTerminAttr -forward_url URL:PORT [origin=ORIGIN] PATH+
+sudo /sbin/ip netns exec ns-management ExTerminAttr -forward_url URL:PORT [origin=ORIGIN] PATH+
 `
 
 func usageAndExit(s string) {
@@ -121,6 +121,10 @@ func main() {
 		usageAndExit("error: address not specified")
 	}
 	args := flag.Args()
+	origin, ok := parseOrigin(args[0])
+	if ok {
+		args = args[1:]
+	}
 
 	if *pathsFile != "" {
 		paths, err = loadPaths(*pathsFile)
@@ -133,6 +137,7 @@ func main() {
 	}
 
 	subscribeOptions.Paths = gnmi.SplitPaths(paths)
+	subscribeOptions.Origin = origin
 	b := &backoff.Backoff{
 		//These are the defaults
 		Min:    100 * time.Millisecond,
@@ -151,6 +156,13 @@ func main() {
 		}
 	}
 
+}
+
+func parseOrigin(s string) (string, bool) {
+	if strings.HasPrefix(s, "origin=") {
+		return strings.TrimPrefix(s, "origin="), true
+	}
+	return "", false
 }
 
 func loadPaths(pathsFile string) ([]string, error) {
@@ -256,7 +268,7 @@ func forward(url string, data []byte) error {
 
 	defer func() {
 		if resp != nil {
-		resp.Body.Close()
+			resp.Body.Close()
 		}
 	}()
 
