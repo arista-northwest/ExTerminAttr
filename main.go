@@ -255,7 +255,9 @@ func forward(url string, data []byte) error {
 	resp, err := client.Do(req)
 
 	defer func() {
+		if resp != nil {
 		resp.Body.Close()
+		}
 	}()
 
 	if err != nil {
