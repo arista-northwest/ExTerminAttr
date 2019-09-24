@@ -41,38 +41,6 @@ func usageAndExit(s string) {
 	os.Exit(1)
 }
 
-func subscribeAndForward(cfg *gnmi.Config, subscribeOptions *gnmi.SubscribeOptions, forwardURL string) error {
-
-	ctx := gnmi.NewContext(context.Background(), cfg)
-	client, err := gnmi.Dial(cfg)
-	if err != nil {
-		glog.Fatal(err)
-	}
-
-	respChan := make(chan *pb.SubscribeResponse, 10)
-	errChan := make(chan error, 10)
-	defer close(errChan)
-
-	go gnmi.Subscribe(ctx, client, subscribeOptions, respChan, errChan)
-
-	for {
-		select {
-		case resp, open := <-respChan:
-			if !open {
-				return err
-			}
-			if err := gnmi.LogSubscribeResponse(resp); err != nil {
-				glog.Fatal(err)
-			}
-			if err := forwardSubscribeResponse(resp, forwardURL); err != nil {
-				return err
-			}
-		case err := <-errChan:
-			return err
-		}
-	}
-}
-
 func main() {
 	cfg := &gnmi.Config{}
 
@@ -277,4 +245,36 @@ func forward(url string, data []byte) error {
 	}
 
 	return nil
+}
+
+func subscribeAndForward(cfg *gnmi.Config, subscribeOptions *gnmi.SubscribeOptions, forwardURL string) error {
+
+	ctx := gnmi.NewContext(context.Background(), cfg)
+	client, err := gnmi.Dial(cfg)
+	if err != nil {
+		glog.Fatal(err)
+	}
+
+	respChan := make(chan *pb.SubscribeResponse, 10)
+	errChan := make(chan error, 10)
+	defer close(errChan)
+
+	go gnmi.Subscribe(ctx, client, subscribeOptions, respChan, errChan)
+
+	for {
+		select {
+		case resp, open := <-respChan:
+			if !open {
+				return err
+			}
+			// if err := gnmi.LogSubscribeResponse(resp); err != nil {
+			// 	glog.Fatal(err)
+			// }
+			if err := forwardSubscribeResponse(resp, forwardURL); err != nil {
+				return err
+			}
+		case err := <-errChan:
+			return err
+		}
+	}
 }
