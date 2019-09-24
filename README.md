@@ -26,15 +26,14 @@ bash sudo ip netns exec ns-management /mnt/flash/ExTerminAttr -forward_url http:
 #### As a daemon
 
 ```
-
-
+daemon ExTerminAttr
+    exec bash /mnt/flash/ExTerminAttr -forward_url http://192.168.56.1:8080 /Smash
+    no shutdown
 ```
-sudo ./ExTerminAttr -forward_url http://192.168.56.1:8080 /Smash
-```
 
-#### Off switch...
+#### Run it remote...
 
 ```
 ExTerminAttr -addr <switch-ip>:6042 -forward_url http://localhost:8080 -paths_file paths.cfg
 ```
-paths.cfg file MUST be space delimited.
+
