@@ -251,7 +251,7 @@ func subscribeAndForward(cfg *gnmi.Config, subscribeOptions *gnmi.SubscribeOptio
 	ctx := gnmi.NewContext(context.Background(), cfg)
 	client, err := gnmi.Dial(cfg)
 	if err != nil {
-		glog.Fatal(err)
+		return err
 	}
 
 	respChan := make(chan *pb.SubscribeResponse, 10)
