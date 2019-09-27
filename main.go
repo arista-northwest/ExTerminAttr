@@ -13,7 +13,6 @@ import (
 	"flag"
 	"fmt"
 	"io/ioutil"
-	"log"
 	"net"
 	"net/http"
 	"os"
@@ -22,10 +21,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/aristanetworks/glog"
 	"github.com/aristanetworks/goarista/gnmi"
 	"github.com/jpillora/backoff"
 	pb "github.com/openconfig/gnmi/proto/gnmi"
+	log "github.com/sirupsen/logrus"
 )
 
 var help = `Usage of ExTerminAttr:
@@ -45,6 +44,8 @@ func main() {
 	cfg := &gnmi.Config{}
 
 	subscribeOptions := &gnmi.SubscribeOptions{}
+
+	level := flag.Int("log_level", 4, "Set logging level [0-5]. Default is 4 (INFO)")
 
 	flag.StringVar(&cfg.Addr, "addr", "localhost:6042", "Address of gNMI gRPC server with optional VRF name")
 	forwardURL := flag.String("forward_url", "http://localhost:8080", "")
@@ -85,27 +86,38 @@ func main() {
 
 	flag.Parse()
 
+	log.SetLevel(log.AllLevels[*level])
+
 	if cfg.Addr == "" {
 		usageAndExit("error: address not specified")
 	}
 	args := flag.Args()
-	origin, ok := parseOrigin(args[0])
-	if ok {
-		args = args[1:]
+	var origin string
+
+	if len(args) > 0 {
+		origin = parseOrigin(args[0])
+		if origin != "" {
+			// offet args if origin is set
+			args = args[1:]
+		}
 	}
 
 	if *pathsFile != "" {
 		paths, err = loadPaths(*pathsFile)
 		if err != nil {
-			glog.Fatal(err)
+			log.Fatal(err)
 		}
-		glog.Info("Loaded paths: ", paths)
 	} else {
 		paths = args[:]
 	}
 
+	log.Infof("Loaded paths: %s", paths)
+
 	subscribeOptions.Paths = gnmi.SplitPaths(paths)
+
+	log.Infof("Setting orgin=%s", origin)
 	subscribeOptions.Origin = origin
+
 	b := &backoff.Backoff{
 		//These are the defaults
 		Min:    100 * time.Millisecond,
@@ -114,11 +126,15 @@ func main() {
 		Jitter: false,
 	}
 
+	log.Infof("Backoff set to: min:%dms, max:%dms, factor:%.f, jitter:%t",
+		b.Min/1000000, b.Max/1000000, b.Factor, b.Jitter)
+
 	for {
+		log.Info("(Re)starting subscribe and forward")
 		err = subscribeAndForward(cfg, subscribeOptions, *forwardURL)
 		if err != nil {
 			d := b.Duration()
-			log.Printf("%s, retrying in %s\n", err, d)
+			log.Warnf(fmt.Sprintf("%s, retrying in %s\n", err, d))
 			time.Sleep(d)
 			continue
 		}
@@ -151,22 +167,26 @@ func forwardSubscribeResponse(response *pb.SubscribeResponse, forwardURL string)
 		for _, update := range resp.Update.Update {
 			value, err := gnmi.ExtractValue(update)
 			if err != nil {
-				log.Printf("Failed to extract value: %s", err)
+				log.Error("Failed to extract value:", err)
 				return nil
 			}
+			p := path.Join(prefix, gnmi.StrPath(update.Path))
+			//log.Debugf("Got [UPDATE]: %s=%s", p, value)
 			updates = append(updates, Update{
 				Timestamp: timetstamp.Format(time.RFC3339Nano),
 				Operation: "UPDATE",
-				Path:      path.Join(prefix, gnmi.StrPath(update.Path)),
+				Path:      p,
 				Value:     value,
 			})
 		}
 
 		for _, del := range resp.Update.Delete {
+			p := path.Join(prefix, gnmi.StrPath(del))
+			//log.Debugf("Got [DELETE]: %s", p)
 			updates = append(updates, Update{
 				Timestamp: timetstamp.Format(time.RFC3339Nano),
 				Operation: "DELETE",
-				Path:      path.Join(prefix, gnmi.StrPath(del)),
+				Path:      p,
 				Value:     nil,
 			})
 		}
@@ -176,6 +196,7 @@ func forwardSubscribeResponse(response *pb.SubscribeResponse, forwardURL string)
 			return err
 		}
 
+		log.Debugf("Forwarding response %s", data)
 		err = forward(forwardURL, data)
 		if err != nil {
 			return err
@@ -235,15 +256,18 @@ func loadPaths(pathsFile string) ([]string, error) {
 
 	data, err := ioutil.ReadAll(file)
 	trimmed := strings.TrimSpace(string(data))
+
 	s := regexp.MustCompile("[[:space:]]+").Split(trimmed, -1)
+
 	return s, nil
 }
 
-func parseOrigin(s string) (string, bool) {
+func parseOrigin(s string) string {
+
 	if strings.HasPrefix(s, "origin=") {
-		return strings.TrimPrefix(s, "origin="), true
+		return strings.TrimPrefix(s, "origin=")
 	}
-	return "", false
+	return ""
 }
 
 func subscribeAndForward(cfg *gnmi.Config, subscribeOptions *gnmi.SubscribeOptions, forwardURL string) error {
@@ -258,6 +282,8 @@ func subscribeAndForward(cfg *gnmi.Config, subscribeOptions *gnmi.SubscribeOptio
 	errChan := make(chan error, 10)
 	defer close(errChan)
 
+	log.Infof("Subscribing to paths: %s", subscribeOptions.Paths)
+
 	go gnmi.Subscribe(ctx, client, subscribeOptions, respChan, errChan)
 
 	for {
@@ -266,9 +292,7 @@ func subscribeAndForward(cfg *gnmi.Config, subscribeOptions *gnmi.SubscribeOptio
 			if !open {
 				return err
 			}
-			// if err := gnmi.LogSubscribeResponse(resp); err != nil {
-			// 	glog.Fatal(err)
-			// }
+
 			if err := forwardSubscribeResponse(resp, forwardURL); err != nil {
 				return err
 			}
